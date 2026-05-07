@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dot Muncher</title>
+  <title>Ceiling Raccoon</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -62,14 +62,14 @@
   </style>
 </head>
 <body>
-  <h1>DOT MUNCHER</h1>
+  <h1>CEILING RACCOON</h1>
   <div id="hud">
     <span>SCORE: <strong id="score-val">0</strong></span>
     <span>BEST: <strong id="hi-val">0</strong></span>
   </div>
   <canvas id="canvas"></canvas>
   <div id="message"></div>
-  <div id="instructions">Arrow keys to move &nbsp;|&nbsp; Collect every dot to win &nbsp;|&nbsp; Press R to restart</div>
+  <div id="instructions">Arrow keys to move &nbsp;|&nbsp; Eat all the AMD chips to escape &nbsp;|&nbsp; Avoid the employee! &nbsp;|&nbsp; R to restart</div>
 
   <script>
     // ─── Constants ────────────────────────────────────────────────────────────
@@ -288,10 +288,21 @@
             ctx.fillStyle = '#0044aa';
             ctx.fillRect(px + 2, py + 2, T - 4, T - 4);
           } else if (cell === DOT) {
-            // Pellet
-            ctx.fillStyle = '#ffecb3';
+            // AMD-inspired chip pellet: right-pointing arrow with a left notch
+            const cx = px + T / 2;
+            const cy = py + T / 2;
+            const s  = 4.5; // half-size in pixels
+            ctx.fillStyle = '#e8e8e8';
             ctx.beginPath();
-            ctx.arc(px + T / 2, py + T / 2, 3, 0, Math.PI * 2);
+            ctx.moveTo(cx - s,        cy - s * 0.52); // top-left
+            ctx.lineTo(cx + s * 0.15, cy - s * 0.52); // top, before tip
+            ctx.lineTo(cx + s,        cy);             // arrow tip (right)
+            ctx.lineTo(cx + s * 0.15, cy + s * 0.52); // bottom, after tip
+            ctx.lineTo(cx - s,        cy + s * 0.52); // bottom-left
+            ctx.lineTo(cx - s,        cy + s * 0.2);  // notch: bottom
+            ctx.lineTo(cx - s * 0.38, cy);             // notch: point
+            ctx.lineTo(cx - s,        cy - s * 0.2);  // notch: top
+            ctx.closePath();
             ctx.fill();
           }
           // OPEN tiles: nothing drawn (black background shows through)
@@ -301,21 +312,67 @@
 
     function drawPlayer() {
       const r  = T * 0.42;
-      const mA = player.mouth * Math.PI; // mouth angle in radians
+      const mA = player.mouth * Math.PI;
 
-      // Direction angle for mouth orientation
+      // Rotate canvas so the mouth always faces the movement direction
       let angle = 0;
-      if (player.dc === 1)  angle = 0;
+      if (player.dc ===  1) angle = 0;
       if (player.dc === -1) angle = Math.PI;
       if (player.dr === -1) angle = -Math.PI / 2;
-      if (player.dr === 1)  angle = Math.PI / 2;
+      if (player.dr ===  1) angle =  Math.PI / 2;
 
-      ctx.fillStyle = '#ff0';
+      ctx.save();
+      ctx.translate(player.x, player.y);
+      ctx.rotate(angle);
+
+      // Gray body with chomping mouth (opens to the right in local space)
+      ctx.fillStyle = '#8c8c8c';
       ctx.beginPath();
-      ctx.moveTo(player.x, player.y);
-      ctx.arc(player.x, player.y, r, angle + mA, angle + Math.PI * 2 - mA);
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, r, mA, Math.PI * 2 - mA);
       ctx.closePath();
       ctx.fill();
+
+      // Counter-rotate for features so they stay upright on screen
+      ctx.rotate(-angle);
+
+      // Ears — two rounded bumps at the top
+      ctx.fillStyle = '#686868';
+      [[-r * 0.42, -r * 0.88], [r * 0.42, -r * 0.88]].forEach(([ex, ey]) => {
+        ctx.beginPath();
+        ctx.arc(ex, ey, r * 0.24, 0, Math.PI * 2);
+        ctx.fill();
+        // Pink inner ear
+        ctx.fillStyle = '#d48080';
+        ctx.beginPath();
+        ctx.arc(ex, ey, r * 0.11, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#686868';
+      });
+
+      // Black raccoon eye mask (horizontal band)
+      ctx.fillStyle = '#1e1e1e';
+      ctx.beginPath();
+      ctx.ellipse(0, -r * 0.1, r * 0.68, r * 0.21, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // White eye scleras
+      ctx.fillStyle = '#f0f0f0';
+      ctx.beginPath(); ctx.arc(-r * 0.26, -r * 0.1, r * 0.14, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc( r * 0.26, -r * 0.1, r * 0.14, 0, Math.PI * 2); ctx.fill();
+
+      // Dark pupils
+      ctx.fillStyle = '#111';
+      ctx.beginPath(); ctx.arc(-r * 0.24, -r * 0.1, r * 0.07, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc( r * 0.28, -r * 0.1, r * 0.07, 0, Math.PI * 2); ctx.fill();
+
+      // Nose (small dark oval below mask)
+      ctx.fillStyle = '#444';
+      ctx.beginPath();
+      ctx.ellipse(0, r * 0.18, r * 0.11, r * 0.08, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
     }
 
     function drawGhost() {
@@ -323,46 +380,70 @@
       const gx = ghost.x;
       const gy = ghost.y;
 
-      ctx.fillStyle = '#f44';
-
-      // Body: half-circle top + rectangle bottom + wavy feet
+      // Hair (brown dome behind head)
+      ctx.fillStyle = '#5c3317';
       ctx.beginPath();
-      ctx.arc(gx, gy - r * 0.1, r, Math.PI, 0); // top dome
-      // Right side down
-      ctx.lineTo(gx + r, gy + r * 0.85);
-      // Wavy bottom (3 bumps)
-      const bumpW = (r * 2) / 3;
-      for (let i = 0; i < 3; i++) {
-        const bx = gx + r - bumpW * i;
-        ctx.arc(bx - bumpW / 2, gy + r * 0.85, bumpW / 2, 0, Math.PI, i % 2 === 0);
-      }
-      ctx.lineTo(gx - r, gy - r * 0.1);
+      ctx.arc(gx, gy - r * 0.22, r * 0.88, Math.PI, 0);
       ctx.closePath();
       ctx.fill();
 
-      // Eyes
-      const eyeOffX = r * 0.33;
-      const eyeOffY = r * 0.05;
-      const eyeR    = r * 0.18;
-      const pupilR  = eyeR * 0.55;
+      // Side ears (flesh-coloured bumps)
+      ctx.fillStyle = '#f5c18a';
+      ctx.beginPath(); ctx.arc(gx - r * 0.8, gy, r * 0.2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(gx + r * 0.8, gy, r * 0.2, 0, Math.PI * 2); ctx.fill();
 
-      [gx - eyeOffX, gx + eyeOffX].forEach(ex => {
-        ctx.fillStyle = '#fff';
-        ctx.beginPath();
-        ctx.arc(ex, gy - eyeOffY, eyeR, 0, Math.PI * 2);
-        ctx.fill();
+      // Head (skin oval)
+      ctx.fillStyle = '#f5c18a';
+      ctx.beginPath();
+      ctx.ellipse(gx, gy + r * 0.08, r * 0.78, r * 0.88, 0, 0, Math.PI * 2);
+      ctx.fill();
 
-        // Pupil looks toward player
-        const pdx = player.x - ghost.x;
-        const pdy = player.y - ghost.y;
-        const pm  = Math.hypot(pdx, pdy) || 1;
-        ctx.fillStyle = '#00f';
+      // White eyes
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.ellipse(gx - r * 0.28, gy - r * 0.06, r * 0.19, r * 0.14, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(gx + r * 0.28, gy - r * 0.06, r * 0.19, r * 0.14, 0, 0, Math.PI * 2); ctx.fill();
+
+      // Pupils that track the raccoon
+      const pdx = player.x - ghost.x;
+      const pdy = player.y - ghost.y;
+      const pm  = Math.hypot(pdx, pdy) || 1;
+      const eyeR   = r * 0.11;
+      const pupilR = r * 0.07;
+      ctx.fillStyle = '#1a1010';
+      [gx - r * 0.28, gx + r * 0.28].forEach(ex => {
         ctx.beginPath();
-        ctx.arc(ex + (pdx / pm) * (eyeR - pupilR),
-                gy - eyeOffY + (pdy / pm) * (eyeR - pupilR),
-                pupilR, 0, Math.PI * 2);
+        ctx.arc(
+          ex  + (pdx / pm) * (eyeR - pupilR),
+          gy - r * 0.06 + (pdy / pm) * (eyeR - pupilR),
+          pupilR, 0, Math.PI * 2
+        );
         ctx.fill();
       });
+
+      // Angry eyebrows (V-shape, inner ends lower)
+      ctx.strokeStyle = '#5c3317';
+      ctx.lineWidth = 1.8;
+      ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(gx - r * 0.46, gy - r * 0.28); ctx.lineTo(gx - r * 0.1, gy - r * 0.18); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(gx + r * 0.1,  gy - r * 0.18); ctx.lineTo(gx + r * 0.46, gy - r * 0.28); ctx.stroke();
+
+      // Nose
+      ctx.fillStyle = '#d4956a';
+      ctx.beginPath();
+      ctx.ellipse(gx, gy + r * 0.18, r * 0.1, r * 0.07, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Determined flat mouth (chasing hard)
+      ctx.strokeStyle = '#a0603a';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(gx - r * 0.22, gy + r * 0.42);
+      ctx.lineTo(gx + r * 0.22, gy + r * 0.42);
+      ctx.stroke();
+
+      // Shirt collar visible at very bottom
+      ctx.fillStyle = '#3a6bbf';
+      ctx.fillRect(gx - r * 0.55, gy + r * 0.78, r * 1.1, r * 0.28);
     }
 
     function drawOverlay(text, sub) {
@@ -405,7 +486,7 @@
           phase = 'won';
           if (score > hiScore) hiScore = score;
           updateHUD();
-          msgEl.textContent = '✦ YOU WIN! Press R to play again ✦';
+          msgEl.textContent = '✦ ESCAPED! All chips eaten! Press R to play again ✦';
           return;
         }
       }
@@ -416,7 +497,7 @@
         phase = 'dead';
         if (score > hiScore) hiScore = score;
         updateHUD();
-        msgEl.textContent = 'GAME OVER — Press R to try again';
+        msgEl.textContent = 'CAUGHT by the employee! Press R to try again';
       }
     }
 
@@ -429,9 +510,9 @@
       drawGhost();
 
       if (phase === 'dead') {
-        drawOverlay('GAME OVER', `Score: ${score}`);
+        drawOverlay('CAUGHT!', `Score: ${score}`);
       } else if (phase === 'won') {
-        drawOverlay('YOU WIN!', `Score: ${score}`);
+        drawOverlay('ESCAPED!', `Score: ${score}`);
       }
     }
 
