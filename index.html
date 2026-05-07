@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dot Muncher</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #111;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Courier New', monospace;
+      color: #fff;
+    }
+
+    h1 {
+      font-size: 2.2rem;
+      letter-spacing: 0.2em;
+      color: #ff0;
+      margin-bottom: 10px;
+      text-shadow: 0 0 12px #ff0a;
+    }
+
+    #hud {
+      display: flex;
+      gap: 48px;
+      margin-bottom: 10px;
+      font-size: 1.1rem;
+      letter-spacing: 0.1em;
+    }
+
+    #hud span { color: #aaa; }
+    #hud strong { color: #fff; }
+
+    canvas {
+      display: block;
+      border: 2px solid #00f;
+      box-shadow: 0 0 20px #00f6;
+    }
+
+    #message {
+      margin-top: 14px;
+      font-size: 1.4rem;
+      letter-spacing: 0.15em;
+      min-height: 2rem;
+      text-align: center;
+      color: #ff0;
+      text-shadow: 0 0 8px #ff08;
+    }
+
+    #instructions {
+      margin-top: 8px;
+      font-size: 0.8rem;
+      color: #555;
+      letter-spacing: 0.08em;
+    }
+  </style>
+</head>
+<body>
+  <h1>DOT MUNCHER</h1>
+  <div id="hud">
+    <span>SCORE: <strong id="score-val">0</strong></span>
+    <span>BEST: <strong id="hi-val">0</strong></span>
+  </div>
+  <canvas id="canvas"></canvas>
+  <div id="message"></div>
+  <div id="instructions">Arrow keys to move &nbsp;|&nbsp; Collect every dot to win &nbsp;|&nbsp; Press R to restart</div>
+
+  <script>
+    // ─── Constants ────────────────────────────────────────────────────────────
+    const T    = 28;   // tile size in pixels
+    const COLS = 20;
+    const ROWS = 22;
+
+    const WALL  = 1;
+    const DOT   = 0;   // walkable tile that has a pellet
+    const OPEN  = 2;   // walkable tile with no pellet (spawn areas / ghost house)
+
+    // ─── Maze layout ─────────────────────────────────────────────────────────
+    // Each row must have exactly COLS (20) entries.
+    // 1=wall, 0=dot, 2=open (no dot)
+    const MAP_TEMPLATE = [
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], // 0
+      [1,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,1], // 1
+      [1,0,1,1,0,1,1,1,0,1,1,0,1,1,1,0,1,1,0,1], // 2
+      [1,0,1,1,0,1,1,1,0,1,1,0,1,1,1,0,1,1,0,1], // 3
+      [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1], // 4
+      [1,0,1,1,0,1,0,1,1,1,1,1,1,0,1,0,1,1,0,1], // 5
+      [1,0,0,0,0,1,0,0,0,1,1,0,0,0,1,0,0,0,0,1], // 6
+      [1,1,1,1,0,1,1,1,0,1,1,0,1,1,1,0,1,1,1,1], // 7
+      [1,1,1,1,0,1,2,2,2,2,2,2,2,2,1,0,1,1,1,1], // 8  ← ghost house top
+      [1,1,1,1,0,1,2,1,1,2,2,1,1,2,1,0,1,1,1,1], // 9  ← ghost house mid
+      [1,1,1,1,0,0,2,1,2,2,2,2,1,2,0,0,1,1,1,1], // 10 ← ghost house open row
+      [1,1,1,1,0,1,2,1,1,1,1,1,1,2,1,0,1,1,1,1], // 11 ← ghost house mid
+      [1,1,1,1,0,1,2,2,2,2,2,2,2,2,1,0,1,1,1,1], // 12 ← ghost house bot
+      [1,1,1,1,0,1,1,1,0,1,1,0,1,1,1,0,1,1,1,1], // 13
+      [1,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,1], // 14
+      [1,0,1,1,0,1,1,1,0,1,1,0,1,1,1,0,1,1,0,1], // 15
+      [1,0,0,1,0,0,0,0,0,2,2,0,0,0,0,0,1,0,0,1], // 16 ← player spawn row
+      [1,1,0,1,0,1,0,1,1,1,1,1,1,0,1,0,1,0,1,1], // 17
+      [1,0,0,0,0,1,0,0,0,1,1,0,0,0,1,0,0,0,0,1], // 18
+      [1,0,1,1,1,1,1,1,0,1,1,0,1,1,1,1,1,1,0,1], // 19
+      [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1], // 20
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], // 21
+    ];
+
+    // ─── Canvas setup ─────────────────────────────────────────────────────────
+    const canvas  = document.getElementById('canvas');
+    const ctx     = canvas.getContext('2d');
+    canvas.width  = COLS * T;
+    canvas.height = ROWS * T;
+
+    const scoreEl = document.getElementById('score-val');
+    const hiEl    = document.getElementById('hi-val');
+    const msgEl   = document.getElementById('message');
+
+    // ─── Game state ───────────────────────────────────────────────────────────
+    let map, score, hiScore = 0, totalDots, phase;
+    let player, ghost;
+    let rafId;
+
+    // Input: queued direction from arrow keys
+    const keys = { ArrowUp:false, ArrowDown:false, ArrowLeft:false, ArrowRight:false };
+    let wantDc = 0, wantDr = 0; // desired direction (column delta, row delta)
+
+    // ─── Helpers ──────────────────────────────────────────────────────────────
+    function canEnter(col, row) {
+      if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return false;
+      return map[row][col] !== WALL;
+    }
+
+    // Returns pixel center of a tile
+    function tileCenter(col, row) {
+      return { x: col * T + T / 2, y: row * T + T / 2 };
+    }
+
+    // Manhattan distance between two tile positions
+    function manhattan(c1, r1, c2, r2) {
+      return Math.abs(c1 - c2) + Math.abs(r1 - r2);
+    }
+
+    // ─── Initialise / reset ───────────────────────────────────────────────────
+    function initGame() {
+      map = MAP_TEMPLATE.map(row => [...row]);
+
+      score = 0;
+      totalDots = 0;
+      map.forEach(row => row.forEach(cell => { if (cell === DOT) totalDots++; }));
+
+      wantDc = -1; wantDr = 0; // default: face left
+
+      // Player starts at col 9, row 16 (OPEN spawn area)
+      player = {
+        col: 9, row: 16,
+        x: 9 * T + T / 2,
+        y: 16 * T + T / 2,
+        dc: 0, dr: 0,      // current direction
+        speed: 2.8,        // pixels per frame
+        mouth: 0.25,       // mouth opening fraction (0=closed, 0.25=quarter)
+        mouthDir: 1,       // 1=opening, -1=closing
+        alive: true,
+      };
+
+      // Ghost starts at col 1, row 1 (top-left corridor)
+      ghost = {
+        col: 1, row: 1,
+        x: 1 * T + T / 2,
+        y: 1 * T + T / 2,
+        dc: 1, dr: 0,      // start moving right
+        speed: 2.0,
+        atCenter: true,    // flag: we just arrived at a tile center
+      };
+
+      phase = 'playing';
+      msgEl.textContent = '';
+      updateHUD();
+    }
+
+    function updateHUD() {
+      scoreEl.textContent = score;
+      hiEl.textContent    = hiScore;
+    }
+
+    // ─── Movement logic ───────────────────────────────────────────────────────
+    // Entities move tile-by-tile. They travel smoothly (pixel interpolation)
+    // toward the center of the next tile. At each tile center we decide the
+    // next tile to enter.
+
+    function movePlayer() {
+      const c = tileCenter(player.col, player.row);
+      const dx = c.x - player.x;
+      const dy = c.y - player.y;
+      const dist = Math.hypot(dx, dy);
+
+      if (dist <= player.speed) {
+        // Arrived at tile center
+        player.x = c.x;
+        player.y = c.y;
+
+        // Try queued direction first, then current direction
+        let moved = false;
+        for (const [tdc, tdr] of [[wantDc, wantDr], [player.dc, player.dr]]) {
+          if ((tdc !== 0 || tdr !== 0) && canEnter(player.col + tdc, player.row + tdr)) {
+            player.dc = tdc;
+            player.dr = tdr;
+            player.col += tdc;
+            player.row += tdr;
+            moved = true;
+            break;
+          }
+        }
+        if (!moved) {
+          player.dc = 0;
+          player.dr = 0;
+        }
+      } else {
+        // Still travelling to tile center
+        player.x += (dx / dist) * player.speed;
+        player.y += (dy / dist) * player.speed;
+      }
+    }
+
+    function moveGhost() {
+      const c = tileCenter(ghost.col, ghost.row);
+      const dx = c.x - ghost.x;
+      const dy = c.y - ghost.y;
+      const dist = Math.hypot(dx, dy);
+
+      if (dist <= ghost.speed) {
+        // Arrived at tile center — choose next direction
+        ghost.x = c.x;
+        ghost.y = c.y;
+
+        const dirs = [
+          { dc:  0, dr: -1 }, // up
+          { dc:  0, dr:  1 }, // down
+          { dc: -1, dr:  0 }, // left
+          { dc:  1, dr:  0 }, // right
+        ];
+
+        // Never reverse unless forced
+        const reverse = { dc: -ghost.dc, dr: -ghost.dr };
+        let options = dirs.filter(d =>
+          !(d.dc === reverse.dc && d.dr === reverse.dr) &&
+          canEnter(ghost.col + d.dc, ghost.row + d.dr)
+        );
+
+        if (options.length === 0) options = [reverse]; // forced reverse
+
+        // 65% chance: pick direction closest to player; else random
+        let chosen;
+        if (Math.random() < 0.65) {
+          options.sort((a, b) =>
+            manhattan(ghost.col + a.dc, ghost.row + a.dr, player.col, player.row) -
+            manhattan(ghost.col + b.dc, ghost.row + b.dr, player.col, player.row)
+          );
+          chosen = options[0];
+        } else {
+          chosen = options[Math.floor(Math.random() * options.length)];
+        }
+
+        ghost.dc = chosen.dc;
+        ghost.dr = chosen.dr;
+        ghost.col += chosen.dc;
+        ghost.row += chosen.dr;
+      } else {
+        ghost.x += (dx / dist) * ghost.speed;
+        ghost.y += (dy / dist) * ghost.speed;
+      }
+    }
+
+    // ─── Drawing ──────────────────────────────────────────────────────────────
+    function drawMaze() {
+      map.forEach((row, r) => {
+        row.forEach((cell, c) => {
+          const px = c * T;
+          const py = r * T;
+
+          if (cell === WALL) {
+            ctx.fillStyle = '#00c';
+            ctx.fillRect(px, py, T, T);
+            // Inset highlight to give walls a slight 3-D look
+            ctx.fillStyle = '#0044aa';
+            ctx.fillRect(px + 2, py + 2, T - 4, T - 4);
+          } else if (cell === DOT) {
+            // Pellet
+            ctx.fillStyle = '#ffecb3';
+            ctx.beginPath();
+            ctx.arc(px + T / 2, py + T / 2, 3, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          // OPEN tiles: nothing drawn (black background shows through)
+        });
+      });
+    }
+
+    function drawPlayer() {
+      const r  = T * 0.42;
+      const mA = player.mouth * Math.PI; // mouth angle in radians
+
+      // Direction angle for mouth orientation
+      let angle = 0;
+      if (player.dc === 1)  angle = 0;
+      if (player.dc === -1) angle = Math.PI;
+      if (player.dr === -1) angle = -Math.PI / 2;
+      if (player.dr === 1)  angle = Math.PI / 2;
+
+      ctx.fillStyle = '#ff0';
+      ctx.beginPath();
+      ctx.moveTo(player.x, player.y);
+      ctx.arc(player.x, player.y, r, angle + mA, angle + Math.PI * 2 - mA);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    function drawGhost() {
+      const r  = T * 0.42;
+      const gx = ghost.x;
+      const gy = ghost.y;
+
+      ctx.fillStyle = '#f44';
+
+      // Body: half-circle top + rectangle bottom + wavy feet
+      ctx.beginPath();
+      ctx.arc(gx, gy - r * 0.1, r, Math.PI, 0); // top dome
+      // Right side down
+      ctx.lineTo(gx + r, gy + r * 0.85);
+      // Wavy bottom (3 bumps)
+      const bumpW = (r * 2) / 3;
+      for (let i = 0; i < 3; i++) {
+        const bx = gx + r - bumpW * i;
+        ctx.arc(bx - bumpW / 2, gy + r * 0.85, bumpW / 2, 0, Math.PI, i % 2 === 0);
+      }
+      ctx.lineTo(gx - r, gy - r * 0.1);
+      ctx.closePath();
+      ctx.fill();
+
+      // Eyes
+      const eyeOffX = r * 0.33;
+      const eyeOffY = r * 0.05;
+      const eyeR    = r * 0.18;
+      const pupilR  = eyeR * 0.55;
+
+      [gx - eyeOffX, gx + eyeOffX].forEach(ex => {
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(ex, gy - eyeOffY, eyeR, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Pupil looks toward player
+        const pdx = player.x - ghost.x;
+        const pdy = player.y - ghost.y;
+        const pm  = Math.hypot(pdx, pdy) || 1;
+        ctx.fillStyle = '#00f';
+        ctx.beginPath();
+        ctx.arc(ex + (pdx / pm) * (eyeR - pupilR),
+                gy - eyeOffY + (pdy / pm) * (eyeR - pupilR),
+                pupilR, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+
+    function drawOverlay(text, sub) {
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = '#ff0';
+      ctx.font = `bold ${T * 1.4}px 'Courier New', monospace`;
+      ctx.textAlign = 'center';
+      ctx.fillText(text, canvas.width / 2, canvas.height / 2 - T);
+
+      if (sub) {
+        ctx.fillStyle = '#fff';
+        ctx.font = `${T * 0.7}px 'Courier New', monospace`;
+        ctx.fillText(sub, canvas.width / 2, canvas.height / 2 + T * 0.5);
+      }
+      ctx.textAlign = 'left';
+    }
+
+    // ─── Game loop ────────────────────────────────────────────────────────────
+    function update() {
+      if (phase !== 'playing') return;
+
+      // Animate player mouth
+      player.mouth += 0.04 * player.mouthDir;
+      if (player.mouth >= 0.25) { player.mouth = 0.25; player.mouthDir = -1; }
+      if (player.mouth <= 0)    { player.mouth = 0;    player.mouthDir =  1; }
+
+      movePlayer();
+      moveGhost();
+
+      // Collect pellet
+      const tile = map[player.row][player.col];
+      if (tile === DOT) {
+        map[player.row][player.col] = OPEN;
+        score += 10;
+        totalDots--;
+        updateHUD();
+        if (totalDots === 0) {
+          phase = 'won';
+          if (score > hiScore) hiScore = score;
+          updateHUD();
+          msgEl.textContent = '✦ YOU WIN! Press R to play again ✦';
+          return;
+        }
+      }
+
+      // Collision with ghost (pixel distance check)
+      const ghostDist = Math.hypot(player.x - ghost.x, player.y - ghost.y);
+      if (ghostDist < T * 0.72) {
+        phase = 'dead';
+        if (score > hiScore) hiScore = score;
+        updateHUD();
+        msgEl.textContent = 'GAME OVER — Press R to try again';
+      }
+    }
+
+    function draw() {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      drawMaze();
+      drawPlayer();
+      drawGhost();
+
+      if (phase === 'dead') {
+        drawOverlay('GAME OVER', `Score: ${score}`);
+      } else if (phase === 'won') {
+        drawOverlay('YOU WIN!', `Score: ${score}`);
+      }
+    }
+
+    function loop() {
+      update();
+      draw();
+      rafId = requestAnimationFrame(loop);
+    }
+
+    // ─── Input handling ───────────────────────────────────────────────────────
+    document.addEventListener('keydown', e => {
+      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
+        e.preventDefault();
+      }
+
+      switch (e.key) {
+        case 'ArrowUp':    wantDc =  0; wantDr = -1; break;
+        case 'ArrowDown':  wantDc =  0; wantDr =  1; break;
+        case 'ArrowLeft':  wantDc = -1; wantDr =  0; break;
+        case 'ArrowRight': wantDc =  1; wantDr =  0; break;
+        case 'r':
+        case 'R':
+          cancelAnimationFrame(rafId);
+          initGame();
+          rafId = requestAnimationFrame(loop);
+          break;
+      }
+    });
+
+    // ─── Start ────────────────────────────────────────────────────────────────
+    initGame();
+    rafId = requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
